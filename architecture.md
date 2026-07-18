@@ -145,3 +145,13 @@ Score interpretation: ≥0.7 = Good (green), 0.4–0.7 = Moderate (yellow), <0.4
 - [x] Working Evaluation Input Module (question, AI response, reference answer, document uploads)
 - [x] Reference Knowledge Base with chunking, embeddings, vector indexing, semantic retrieval
 - [x] Demonstration that a query retrieves the most relevant reference chunks (Retrieval Demo tab)
+
+---
+
+## Milestone 2 Deliverables Checklist
+
+- [x] **Relevance Judge Agent**: Completed zero-temperature LLM-based scoring of response relevance on a 0-10 scale with reasoning justification.
+- [x] **Accuracy Judge Agent**: Completed factual accuracy comparisons against reference answers/RAG chunks with score, verdict, and supporting quotes.
+- [x] **Hallucination Detector Agent**: Completed sentence-level grounding check to identify and flag specific unsupported claims.
+- [x] **Consistency Validation Suite**: Built suite running on benchmark QA pairs to calculate scoring mean and standard deviations and verify correctness consistency margins.
+- [x] **Production UI Transition**: Refactored application to a lightweight, zero-dependency HTML/CSS/JS single-page layout served entirely by Python/FastAPI (without Node.js).

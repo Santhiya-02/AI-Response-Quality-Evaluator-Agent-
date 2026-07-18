@@ -1,18 +1,19 @@
 """
-Scoring Module (Milestone 1 Foundation)
-Provides basic lexical and semantic similarity scores.
-Full judge agents (Relevance, Accuracy, Hallucination) are implemented in Milestone 2.
+Scoring Module — baseline lexical and semantic similarity scores.
 """
 
 import re
+import os
 from sentence_transformers import SentenceTransformer, util
 from dotenv import load_dotenv
-import os
 
 load_dotenv()
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 
 _embedder = None
+_groq_client = None
 
 
 def _get_embedder():
@@ -20,6 +21,14 @@ def _get_embedder():
     if _embedder is None:
         _embedder = SentenceTransformer(EMBEDDING_MODEL)
     return _embedder
+
+
+def _get_groq_client():
+    global _groq_client
+    if _groq_client is None and GROQ_API_KEY:
+        from groq import Groq
+        _groq_client = Groq(api_key=GROQ_API_KEY)
+    return _groq_client
 
 
 def semantic_similarity(text_a: str, text_b: str) -> float:
@@ -47,26 +56,37 @@ def token_overlap_f1(prediction: str, reference: str) -> float:
     return round(2 * precision * recall / (precision + recall), 4)
 
 
+def groq_judge(prompt: str) -> str:
+    """Call Groq LLM with a prompt and return the response text."""
+    client = _get_groq_client()
+    if not client:
+        return "Groq API key not configured."
+    response = client.chat.completions.create(
+        model=GROQ_MODEL,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.0,
+        max_tokens=512
+    )
+    return response.choices[0].message.content.strip()
+
+
 def score_response(question: str, ai_response: str, reference_answer: str = None,
-                   retrieved_chunks: list[dict] = None) -> dict:
+                   retrieved_chunks: list[dict] = None,
+                   run_judges: bool = False) -> dict:
     """
-    Compute Milestone 1 baseline scores.
-    Returns a score dict used as input to Milestone 2 judge agents.
+    Compute baseline scores (M1) and optionally run LLM judge agents (M2).
+    Set run_judges=True to invoke Relevance, Accuracy, and Hallucination judges.
     """
     scores = {}
 
-    # Retrieval relevance: avg similarity of top retrieved chunks to the question
     if retrieved_chunks:
         chunk_sims = [c["similarity_score"] for c in retrieved_chunks]
         scores["retrieval_relevance"] = round(sum(chunk_sims) / len(chunk_sims), 4)
-        # Response-to-context grounding
-        top_chunk = retrieved_chunks[0]["chunk"] if retrieved_chunks else ""
-        scores["response_grounding"] = semantic_similarity(ai_response, top_chunk)
+        scores["response_grounding"] = semantic_similarity(ai_response, retrieved_chunks[0]["chunk"])
     else:
         scores["retrieval_relevance"] = None
         scores["response_grounding"] = None
 
-    # Reference-based scores (when reference answer is provided)
     if reference_answer:
         scores["semantic_similarity"] = semantic_similarity(ai_response, reference_answer)
         scores["token_f1"] = token_overlap_f1(ai_response, reference_answer)
@@ -74,7 +94,10 @@ def score_response(question: str, ai_response: str, reference_answer: str = None
         scores["semantic_similarity"] = None
         scores["token_f1"] = None
 
-    # Question-response relevance
     scores["question_response_relevance"] = semantic_similarity(question, ai_response)
+
+    if run_judges:
+        from src.judges import run_all_judges
+        scores["judges"] = run_all_judges(question, ai_response, reference_answer, retrieved_chunks)
 
     return scores

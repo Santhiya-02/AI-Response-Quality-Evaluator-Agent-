@@ -1,0 +1,1287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="AI Response Quality Evaluator Dashboard - evaluate semantic similarity, factual correctness, and hallucinations.">
+  <link rel="icon" type="image/svg+xml" href="https://img.icons8.com/fluency/48/artificial-intelligence.png">
+  <title>AI Response Quality Evaluator Dashboard</title>
+  
+  <!-- CDNs: TailwindCSS, Chart.js, and Lucide Icons -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  
+  <!-- Custom Fonts & Glassmorphic CSS Variables -->
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+    :root {
+      --bg-primary: #060b13;
+      --bg-secondary: #0a1120;
+      --bg-card: rgba(16, 28, 48, 0.45);
+      --bg-card-hover: rgba(22, 38, 64, 0.6);
+      --border-color: rgba(255, 255, 255, 0.07);
+      
+      --text-primary: #f3f4f6;
+      --text-secondary: #9ca3af;
+      --text-muted: #6b7280;
+      
+      --accent-blue: #3b82f6;
+      --accent-blue-glow: rgba(59, 130, 246, 0.15);
+      --accent-cyan: #06b6d4;
+      
+      --color-green: #10b981;
+      --color-yellow: #f59e0b;
+      --color-red: #ef4444;
+    }
+
+    body {
+      background-color: var(--bg-primary);
+      background-image: 
+        radial-gradient(at 0% 0%, rgba(59, 130, 246, 0.08) 0px, transparent 50%),
+        radial-gradient(at 100% 100%, rgba(139, 92, 246, 0.06) 0px, transparent 50%);
+      color: var(--text-primary);
+      font-family: 'Outfit', 'Inter', sans-serif;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    .glass-card {
+      background: var(--bg-card);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid var(--border-color);
+    }
+
+    .glass-card:hover {
+      border-color: rgba(255, 255, 255, 0.12);
+      background: var(--bg-card-hover);
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+    }
+
+    .sidebar-blur {
+      background: rgba(10, 17, 32, 0.7);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+    }
+
+    /* SVG Progress Ring */
+    .progress-ring-container {
+      position: relative;
+      width: 80px;
+      height: 80px;
+    }
+
+    .progress-ring-circle {
+      transition: stroke-dashoffset 0.5s ease;
+      transform: rotate(-90deg);
+      transform-origin: 50% 50%;
+    }
+
+    /* Custom scrollbars */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.2); }
+
+    .code-container {
+      background: #070c16;
+      border: 1px solid var(--border-color);
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .spin-anim {
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body class="flex min-height-screen">
+
+  <!-- ── Sidebar ── -->
+  <aside class="w-72 fixed h-screen left-0 top-0 sidebar-blur border-r border-white/5 p-6 flex flex-col z-50">
+    <!-- Logo -->
+    <div class="flex items-center gap-3 mb-8">
+      <div class="bg-gradient-to-br from-blue-500 to-cyan-500 w-10 h-10 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20">
+        <i data-lucide="brain" class="text-white w-6 h-6"></i>
+      </div>
+      <span class="text-xl font-extrabold tracking-tight bg-gradient-to-r from-white to-indigo-300 bg-clip-text text-transparent">AI Evaluator</span>
+    </div>
+
+    <!-- Navigation -->
+    <nav class="flex-1">
+      <ul class="space-y-1.5" id="nav-list">
+        <li>
+          <button onclick="switchTab('evaluate')" id="nav-evaluate" class="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-gray-400 font-medium hover:bg-white/5 hover:text-white transition-all border border-transparent active-nav">
+            <i data-lucide="file-text" class="w-4 h-4"></i> Evaluate Response
+          </button>
+        </li>
+        <li>
+          <button onclick="switchTab('judges')" id="nav-judges" class="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-gray-400 font-medium hover:bg-white/5 hover:text-white transition-all border border-transparent">
+            <i data-lucide="activity" class="w-4 h-4"></i> Judge Agents
+          </button>
+        </li>
+        <li>
+          <button onclick="switchTab('retrieval')" id="nav-retrieval" class="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-gray-400 font-medium hover:bg-white/5 hover:text-white transition-all border border-transparent">
+            <i data-lucide="search" class="w-4 h-4"></i> Retrieval Playground
+          </button>
+        </li>
+        <li>
+          <button onclick="switchTab('validation')" id="nav-validation" class="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-gray-400 font-medium hover:bg-white/5 hover:text-white transition-all border border-transparent">
+            <i data-lucide="check-circle" class="w-4 h-4"></i> Consistency Validation
+          </button>
+        </li>
+        <li>
+          <button onclick="switchTab('architecture')" id="nav-architecture" class="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-gray-400 font-medium hover:bg-white/5 hover:text-white transition-all border border-transparent">
+            <i data-lucide="layers" class="w-4 h-4"></i> Architecture Flow
+          </button>
+        </li>
+      </ul>
+    </nav>
+
+    <!-- Database Status -->
+    <div class="bg-white/2 border border-white/5 rounded-xl p-4 mt-auto">
+      <div class="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">
+        <i data-lucide="database" class="w-3.5 h-3.5 text-blue-400"></i> Knowledge Base
+      </div>
+      <div class="text-2xl font-bold flex items-baseline gap-1" id="kb-chunk-display">
+        0 <span class="text-xs font-normal text-gray-400">chunks</span>
+      </div>
+
+      <!-- Load Benchmarks -->
+      <div class="mt-4">
+        <label class="block text-[10px] font-bold uppercase text-gray-500 mb-1.5">Load Benchmark Dataset</label>
+        <div class="flex gap-2">
+          <select id="benchmark-select" class="flex-1 bg-[#0a1120] border border-white/5 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500">
+            <option>— select —</option>
+            <option>TriviaQA (200 QA pairs)</option>
+            <option>SQuAD (200 passages)</option>
+          </select>
+          <button onclick="loadBenchmark()" id="benchmark-btn" class="bg-white/5 border border-white/5 hover:bg-white/10 text-white rounded-lg w-8 h-8 flex items-center justify-center transition-all">
+            <i data-lucide="refresh-cw" class="w-4 h-4" id="benchmark-spinner"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- File Indexer -->
+      <div class="mt-4">
+        <div onclick="document.getElementById('file-input').click()" class="border border-dashed border-white/10 rounded-lg p-3 text-center cursor-pointer hover:border-blue-500 hover:bg-blue-500/2 transition-all flex flex-col items-center gap-1 text-[11px] text-gray-400">
+          <i data-lucide="upload" class="w-4 h-4"></i>
+          <span>Click to Upload Doc</span>
+          <input type="file" id="file-input" class="hidden" multiple accept=".pdf,.txt,.md" onchange="handleFileSelect(event)">
+        </div>
+        <div id="file-list" class="mt-2 space-y-1 hidden">
+          <!-- Files list appended here -->
+        </div>
+      </div>
+
+      <button onclick="resetKb()" id="reset-btn" class="w-full mt-4 bg-red-500/10 border border-red-500/20 hover:bg-red-500/20 text-red-400 rounded-lg text-xs py-2 font-semibold transition-all flex items-center justify-center gap-1.5">
+        <i data-lucide="trash-2" class="w-3.5 h-3.5"></i> Reset KB
+      </button>
+    </div>
+  </aside>
+
+  <!-- ── Main Content Area ── -->
+  <main class="flex-1 ml-72 p-10 min-w-0">
+
+    <!-- ─────────────────────────────────────────────────────────────────── -->
+    <!-- TAB 1: Evaluate Response -->
+    <!-- ─────────────────────────────────────────────────────────────────── -->
+    <section id="tab-evaluate" class="tab-content">
+      <header class="mb-8">
+        <h1 class="text-3xl font-extrabold tracking-tight">📝 Evaluate Response</h1>
+        <p class="text-gray-400 mt-1 text-sm">Calculate semantic similarity, grounding, and alignment metrics.</p>
+      </header>
+
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+        <!-- Form -->
+        <div class="lg:col-span-6 glass-card rounded-2xl p-6">
+          <h2 class="text-lg font-bold flex items-center gap-2 mb-4"><i data-lucide="file-text" class="text-blue-400 w-5 h-5"></i> Input Module</h2>
+          
+          <div class="mb-4">
+            <label class="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Question *</label>
+            <textarea id="eval-q" class="w-full bg-[#0a1120]/50 border border-white/5 rounded-lg p-3 text-sm text-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20 h-20" placeholder="Enter evaluation query..."></textarea>
+          </div>
+
+          <div class="mb-4">
+            <label class="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">AI Response *</label>
+            <textarea id="eval-r" class="w-full bg-[#0a1120]/50 border border-white/5 rounded-lg p-3 text-sm text-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20 h-32" placeholder="Paste generated response to check..."></textarea>
+          </div>
+
+          <div class="mb-4">
+            <label class="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Reference Answer (optional)</label>
+            <textarea id="eval-ref" class="w-full bg-[#0a1120]/50 border border-white/5 rounded-lg p-3 text-sm text-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20 h-20" placeholder="Provide ground-truth baseline answers..."></textarea>
+          </div>
+
+          <div class="mb-6">
+            <div class="flex justify-between items-center text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">
+              <span>Top-K Chunks to Retrieve</span>
+              <span id="eval-topk-val" class="text-blue-400">5 Chunks</span>
+            </div>
+            <input type="range" id="eval-topk" min="1" max="10" value="5" class="w-full h-1.5 bg-gray-800 rounded-lg cursor-pointer accent-blue-500" oninput="document.getElementById('eval-topk-val').innerText = this.value + ' Chunks'">
+          </div>
+
+          <button onclick="runEvaluation()" id="eval-submit-btn" class="w-full bg-gradient-to-r from-blue-500 to-indigo-600 hover:brightness-110 text-white font-semibold rounded-lg py-3 flex items-center justify-center gap-2 shadow-lg shadow-blue-500/10 active:scale-[0.99] transition-all">
+            <i data-lucide="play" class="w-4 h-4"></i> Evaluate Quality
+          </button>
+        </div>
+
+        <!-- Output Cards -->
+        <div class="lg:col-span-6 glass-card rounded-2xl p-6">
+          <h2 class="text-lg font-bold flex items-center gap-2 mb-6"><i data-lucide="activity" class="text-blue-400 w-5 h-5"></i> Evaluation Results</h2>
+          
+          <div id="eval-default-placeholder" class="text-center py-16 text-gray-400 flex flex-col items-center justify-center gap-3">
+            <i data-lucide="info" class="w-10 h-10 opacity-50"></i>
+            <p class="max-w-xs text-sm">Enter inputs on the left and trigger <strong>Evaluate Quality</strong> to run semantic calculations.</p>
+          </div>
+
+          <div id="eval-results-container" class="hidden">
+            <!-- Progress rings grid -->
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+              <div class="bg-white/1 border border-white/5 rounded-xl p-4 flex flex-col items-center justify-center text-center">
+                <div class="progress-ring-container" id="ring-qr">
+                  <!-- JS builds SVG here -->
+                </div>
+                <span class="text-xs font-semibold text-gray-400 mt-2">Q-R Relevance</span>
+              </div>
+              <div class="bg-white/1 border border-white/5 rounded-xl p-4 flex flex-col items-center justify-center text-center">
+                <div class="progress-ring-container" id="ring-ret">
+                  <!-- JS builds SVG here -->
+                </div>
+                <span class="text-xs font-semibold text-gray-400 mt-2">Retrieval Rel</span>
+              </div>
+              <div class="bg-white/1 border border-white/5 rounded-xl p-4 flex flex-col items-center justify-center text-center">
+                <div class="progress-ring-container" id="ring-ground">
+                  <!-- JS builds SVG here -->
+                </div>
+                <span class="text-xs font-semibold text-gray-400 mt-2">Grounding</span>
+              </div>
+              <div class="bg-white/1 border border-white/5 rounded-xl p-4 flex flex-col items-center justify-center text-center">
+                <div class="progress-ring-container" id="ring-sem">
+                  <!-- JS builds SVG here -->
+                </div>
+                <span class="text-xs font-semibold text-gray-400 mt-2">Semantic Sim</span>
+              </div>
+            </div>
+
+            <!-- F1 -->
+            <div class="flex items-center gap-2 mb-6">
+              <span class="text-sm font-semibold">Token Overlap F1 (SQuAD style):</span>
+              <span id="f1-badge"></span>
+            </div>
+
+            <div class="h-px bg-white/5 my-6"></div>
+
+            <!-- Retrieved chunks list -->
+            <h3 class="text-sm font-bold uppercase tracking-wider text-gray-400 mb-3" id="retrieved-chunks-header">Top Retrieved Reference Chunks (0)</h3>
+            <div class="space-y-3" id="retrieved-chunks-container">
+              <!-- Rendered dynamically -->
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─────────────────────────────────────────────────────────────────── -->
+    <!-- TAB 2: Judge Agents -->
+    <!-- ─────────────────────────────────────────────────────────────────── -->
+    <section id="tab-judges" class="tab-content hidden">
+      <header class="mb-8">
+        <h1 class="text-3xl font-extrabold tracking-tight">⚖️ LLM Judge Agents</h1>
+        <p class="text-gray-400 mt-1 text-sm">Orchestrate zero-temperature specialized LLM agents via Groq to review responses.</p>
+      </header>
+
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+        <!-- Form -->
+        <div class="lg:col-span-6 glass-card rounded-2xl p-6">
+          <h2 class="text-lg font-bold flex items-center gap-2 mb-4"><i data-lucide="file-text" class="text-blue-400 w-5 h-5"></i> Judge Input Criteria</h2>
+          
+          <div class="mb-4">
+            <label class="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Question *</label>
+            <textarea id="judge-q" class="w-full bg-[#0a1120]/50 border border-white/5 rounded-lg p-3 text-sm text-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20 h-20" placeholder="Enter question to judge..."></textarea>
+          </div>
+
+          <div class="mb-4">
+            <label class="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">AI Response *</label>
+            <textarea id="judge-r" class="w-full bg-[#0a1120]/50 border border-white/5 rounded-lg p-3 text-sm text-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20 h-32" placeholder="Paste generated response to review..."></textarea>
+          </div>
+
+          <div class="mb-4">
+            <label class="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Reference Answer (optional)</label>
+            <textarea id="judge-ref" class="w-full bg-[#0a1120]/50 border border-white/5 rounded-lg p-3 text-sm text-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20 h-20" placeholder="Ground-truth baseline reference..."></textarea>
+          </div>
+
+          <div class="mb-6">
+            <div class="flex justify-between items-center text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">
+              <span>Context Retrieval Limit</span>
+              <span id="judge-topk-val" class="text-blue-400">4 Chunks</span>
+            </div>
+            <input type="range" id="judge-topk" min="1" max="8" value="4" class="w-full h-1.5 bg-gray-800 rounded-lg cursor-pointer accent-blue-500" oninput="document.getElementById('judge-topk-val').innerText = this.value + ' Chunks'">
+          </div>
+
+          <button onclick="runJudges()" id="judge-submit-btn" class="w-full bg-gradient-to-r from-blue-500 to-indigo-600 hover:brightness-110 text-white font-semibold rounded-lg py-3 flex items-center justify-center gap-2 shadow-lg shadow-blue-500/10 active:scale-[0.99] transition-all">
+            <i data-lucide="activity" class="w-4 h-4"></i> Orchestrate LLM Judges
+          </button>
+        </div>
+
+        <!-- Output Verdicts -->
+        <div class="lg:col-span-6 glass-card rounded-2xl p-6">
+          <h2 class="text-lg font-bold flex items-center gap-2 mb-6"><i data-lucide="check-circle" class="text-blue-400 w-5 h-5"></i> Evaluator Agent Verdicts</h2>
+          
+          <div id="judge-default-placeholder" class="text-center py-16 text-gray-400 flex flex-col items-center justify-center gap-3">
+            <i data-lucide="help-circle" class="w-10 h-10 opacity-50"></i>
+            <p class="max-w-xs text-sm">Parameters are forwarded to Relevance, Accuracy, and Grounding agents for factuality checks.</p>
+          </div>
+
+          <div id="judge-results-container" class="hidden space-y-5">
+            <!-- Relevance card -->
+            <div class="bg-white/1 border border-white/5 rounded-xl p-4">
+              <div class="flex justify-between items-center mb-3">
+                <span class="font-bold text-sm text-blue-400">🎯 Relevance Judge Agent</span>
+                <div class="flex items-center gap-2">
+                  <span id="judge-score-relevance" class="text-lg font-extrabold text-white"></span>
+                  <span id="judge-badge-relevance"></span>
+                </div>
+              </div>
+              <p class="text-sm" id="judge-reason-relevance"></p>
+            </div>
+
+            <!-- Accuracy card -->
+            <div class="bg-white/1 border border-white/5 rounded-xl p-4">
+              <div class="flex justify-between items-center mb-3">
+                <span class="font-bold text-sm text-emerald-400">✅ Accuracy Judge Agent</span>
+                <div class="flex items-center gap-2" id="judge-acc-badge-container">
+                  <span id="judge-score-accuracy" class="text-lg font-extrabold text-white"></span>
+                  <span id="judge-badge-accuracy"></span>
+                </div>
+              </div>
+              <div class="text-sm space-y-2">
+                <p id="judge-reason-accuracy"></p>
+                <div id="judge-evidence-container" class="hidden border-l-2 border-emerald-500 bg-white/1 p-2 rounded-r italic text-gray-400 text-xs">
+                  <!-- Evidence code here -->
+                </div>
+              </div>
+            </div>
+
+            <!-- Hallucination card -->
+            <div class="bg-white/1 border border-white/5 rounded-xl p-4">
+              <div class="flex justify-between items-center mb-3">
+                <span class="font-bold text-sm text-red-400">🔍 Hallucination Detector Agent</span>
+                <div class="flex items-center gap-2" id="judge-hal-badge-container">
+                  <span id="judge-score-hallucination" class="text-lg font-extrabold text-white"></span>
+                  <span id="judge-badge-hallucination"></span>
+                </div>
+              </div>
+              <div class="text-sm space-y-3">
+                <p id="judge-reason-hallucination"></p>
+                <div id="judge-flagged-container" class="hidden">
+                  <strong class="text-xs text-red-400 uppercase tracking-wider block mb-1">Flagged Unsupported Claims:</strong>
+                  <ul id="judge-flagged-list" class="space-y-1.5">
+                    <!-- Flagged claims -->
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─────────────────────────────────────────────────────────────────── -->
+    <!-- TAB 3: Retrieval Demo -->
+    <!-- ─────────────────────────────────────────────────────────────────── -->
+    <section id="tab-retrieval" class="tab-content hidden">
+      <header class="mb-8">
+        <h1 class="text-3xl font-extrabold tracking-tight">🔍 Semantic Retrieval Playground</h1>
+        <p class="text-gray-400 mt-1 text-sm">Query the local vector database directly to review dense similarity scoring matches.</p>
+      </header>
+
+      <div class="glass-card rounded-2xl p-6 mb-6">
+        <h2 class="text-lg font-bold flex items-center gap-2 mb-4"><i data-lucide="search" class="text-blue-400 w-5 h-5"></i> Search Vector Database</h2>
+        <div class="flex flex-col sm:flex-row gap-3">
+          <input type="text" id="retrieval-query" class="flex-1 bg-[#0a1120]/50 border border-white/5 rounded-lg p-3 text-sm text-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20" placeholder="Type direct questions like 'What stands for RAG?'" onkeydown="if(event.key === 'Enter') runSearch()">
+          <select id="retrieval-limit" class="bg-[#0a1120] border border-white/5 rounded-lg px-4 py-3 text-sm text-white focus:outline-none focus:border-blue-500">
+            <option value="3">Top 3 Results</option>
+            <option value="5" selected>Top 5 Results</option>
+            <option value="8">Top 8 Results</option>
+          </select>
+          <button onclick="runSearch()" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg px-6 py-3 transition-all">Search KB</button>
+        </div>
+      </div>
+
+      <div id="retrieval-results-card" class="glass-card rounded-2xl p-6 hidden">
+        <h2 class="text-lg font-bold flex items-center gap-2 mb-4" id="retrieval-results-title">Nearest Neighbor Matches (0)</h2>
+        <div class="space-y-4" id="retrieval-results-container">
+          <!-- Rendered matches -->
+        </div>
+      </div>
+
+      <div id="retrieval-placeholder" class="glass-card rounded-2xl p-12 text-center text-gray-400">
+        <i data-lucide="search" class="w-10 h-10 mx-auto mb-3 opacity-50"></i>
+        <p class="text-sm">Semantic searches query vectors in ChromaDB. Ensure you have loaded documents into the database first.</p>
+      </div>
+    </section>
+
+    <!-- ─────────────────────────────────────────────────────────────────── -->
+    <!-- TAB 4: Consistency Validation -->
+    <!-- ─────────────────────────────────────────────────────────────────── -->
+    <section id="tab-validation" class="tab-content hidden">
+      <header class="mb-8">
+        <h1 class="text-3xl font-extrabold tracking-tight">🧪 Consistency Validation</h1>
+        <p class="text-gray-400 mt-1 text-sm">Validate evaluation consistency and robustness statistics across benchmark QA datasets.</p>
+      </header>
+
+      <!-- Progress Card -->
+      <div id="val-progress-card" class="glass-card rounded-2xl p-6 mb-6 hidden border-l-4 border-blue-500">
+        <div class="flex justify-between items-center mb-3">
+          <span class="font-bold text-sm" id="val-progress-title">Benchmark Suite Executing...</span>
+          <span id="val-progress-count" class="text-xs font-semibold">0 / 8 Evaluated</span>
+        </div>
+        <div class="w-full h-2 bg-white/5 rounded-full overflow-hidden mb-2">
+          <div id="val-progress-bar" class="h-full bg-blue-500 transition-all duration-300 w-0"></div>
+        </div>
+        <p id="val-progress-sub" class="text-xs text-gray-400 font-medium italic"></p>
+      </div>
+
+      <!-- Start Button panel -->
+      <div id="val-start-card" class="glass-card rounded-2xl p-12 text-center mb-6">
+        <i data-lucide="check-circle" class="w-12 h-12 text-blue-500 mx-auto mb-4 opacity-80 animate-pulse"></i>
+        <h3 class="text-xl font-bold mb-2">Execute Verification Suite</h3>
+        <p class="text-gray-400 max-w-lg mx-auto mb-6 text-sm">
+          Run evaluations across the structured benchmark QA pairs (containing correct and incorrect AI answers). It calculates scores distributions and validates correctness margins.
+        </p>
+        <button onclick="runValidationSuite()" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg px-8 py-3.5 transition-all shadow-lg shadow-blue-500/10 flex items-center gap-2 mx-auto">
+          <i data-lucide="play" class="w-4 h-4"></i> Run Validation Suite
+        </button>
+      </div>
+
+      <!-- Results Grid -->
+      <div id="val-results-card" class="hidden space-y-6">
+        <div class="grid grid-cols-1 sm:grid-cols-4 gap-6">
+          <div class="bg-white/2 border border-white/5 rounded-2xl p-5 text-center flex flex-col items-center justify-center">
+            <span class="text-xs font-bold text-gray-500 uppercase tracking-wider">AVG RELEVANCE</span>
+            <div id="val-mean-relevance" class="text-3xl font-black mt-2 text-white bg-gradient-to-r from-white to-blue-300 bg-clip-text text-transparent"></div>
+            <span id="val-stdev-relevance" class="text-[10px] text-gray-500 font-semibold mt-1"></span>
+          </div>
+          <div class="bg-white/2 border border-white/5 rounded-2xl p-5 text-center flex flex-col items-center justify-center">
+            <span class="text-xs font-bold text-gray-500 uppercase tracking-wider">AVG ACCURACY</span>
+            <div id="val-mean-accuracy" class="text-3xl font-black mt-2 text-white bg-gradient-to-r from-white to-emerald-300 bg-clip-text text-transparent"></div>
+            <span id="val-stdev-accuracy" class="text-[10px] text-gray-500 font-semibold mt-1"></span>
+          </div>
+          <div class="bg-white/2 border border-white/5 rounded-2xl p-5 text-center flex flex-col items-center justify-center">
+            <span class="text-xs font-bold text-gray-500 uppercase tracking-wider">AVG GROUNDING</span>
+            <div id="val-mean-grounding" class="text-3xl font-black mt-2 text-white bg-gradient-to-r from-white to-red-300 bg-clip-text text-transparent"></div>
+            <span id="val-stdev-grounding" class="text-[10px] text-gray-500 font-semibold mt-1"></span>
+          </div>
+          <div id="val-consistency-card" class="border rounded-2xl p-5 text-center flex flex-col items-center justify-center">
+            <span class="text-xs font-bold text-gray-500 uppercase tracking-wider">CONSISTENCY VERDICT</span>
+            <div id="val-verdict-status" class="text-3xl font-black mt-2"></div>
+            <span id="val-margin-detail" class="text-[10px] text-gray-400 font-semibold mt-1"></span>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+          <!-- Chart card -->
+          <div class="lg:col-span-8 glass-card rounded-2xl p-6">
+            <h2 class="text-md font-bold mb-4 flex items-center gap-2"><i data-lucide="activity" class="text-blue-400 w-4 h-4"></i> Accuracy Score Comparison</h2>
+            <div class="h-80 w-full relative">
+              <canvas id="accuracy-comparison-chart"></canvas>
+            </div>
+          </div>
+
+          <!-- Summary card -->
+          <div class="lg:col-span-4 glass-card rounded-2xl p-6">
+            <h2 class="text-md font-bold mb-4">Run Stats</h2>
+            <div class="space-y-3.5 text-sm" id="val-stats-table">
+              <!-- Statistics items -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Expandable accordions -->
+        <div class="glass-card rounded-2xl p-6">
+          <h2 class="text-lg font-bold flex items-center gap-2 mb-4"><i data-lucide="file-text" class="text-blue-400 w-5 h-5"></i> Detailed QA Pair Evaluations</h2>
+          <div class="space-y-3" id="val-pairs-container">
+            <!-- Accordion cards -->
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─────────────────────────────────────────────────────────────────── -->
+    <!-- TAB 5: Architecture -->
+    <!-- ─────────────────────────────────────────────────────────────────── -->
+    <section id="tab-architecture" class="tab-content hidden">
+      <header class="mb-8">
+        <h1 class="text-3xl font-extrabold tracking-tight">🏗 System Architecture</h1>
+        <p class="text-gray-400 mt-1 text-sm">Decoupled API layout, database index metrics, and scoring rules.</p>
+      </header>
+
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+        <div class="lg:col-span-6 glass-card rounded-2xl p-6">
+          <h2 class="text-lg font-bold flex items-center gap-2 mb-4">Orchestration Flow</h2>
+          <pre class="code-container p-4 rounded-xl text-xs overflow-x-auto text-[#c9d1d9] leading-5">
+┌─────────────────────────────────────────┐
+│           EVALUATION INPUT MODULE        │
+│  • Question + AI Response (required)     │
+│  • Reference Answer (optional)           │
+│  • Document Upload PDF/TXT/MD (optional) │
+└──────────────────┬──────────────────────┘
+                   │
+         ┌─────────▼──────────┐
+         │  DOCUMENT PARSER   │
+         │  PyPDF2 / plain txt│
+         └─────────┬──────────┘
+                   │
+         ┌─────────▼──────────────────────┐
+         │    CHUNKING ENGINE             │
+         │  400-char chunks, 80 overlap   │
+         └─────────┬──────────────────────┘
+                   │
+         ┌─────────▼──────────────────────┐
+         │    EMBEDDING MODEL             │
+         │  all-MiniLM-L6-v2 (local)      │
+         │  384-dim dense vectors         │
+         └─────────┬──────────────────────┘
+                   │
+         ┌─────────▼──────────────────────┐
+         │    VECTOR DATABASE             │
+         │  ChromaDB (persistent)         │
+         │  Cosine similarity index       │
+         └─────────┬──────────────────────┘
+                   │
+         ┌─────────▼──────────────────────┐
+         │    SEMANTIC RETRIEVAL          │
+         │  Top-K nearest neighbors       │
+         │  Returns chunks + scores       │
+         └─────────┬──────────────────────┘
+                   │
+         ┌─────────▼──────────────────────┐
+         │    SCORING + JUDGE AGENTS      │
+         │  • Question-Response Relevance │
+         │  • Retrieval Relevance         │
+         │  • Response Grounding          │
+         │  • Relevance Judge (LLM)       │
+         │  • Accuracy Judge (LLM)        │
+         │  • Hallucination Detector (LLM)│
+         └────────────────────────────────┘</pre>
+        </div>
+
+        <div class="lg:col-span-6 glass-card rounded-2xl p-6 space-y-6">
+          <div>
+            <h3 class="text-sm font-bold text-blue-400 mb-2">1. Local Vector Indexing</h3>
+            <p class="text-xs text-gray-400 leading-relaxed">
+              Files uploaded into the panel are split into 400-char chunks (80 overlap), embedded using standard local vectors (384-dim dimensions, model: <code class="bg-[#070c16] text-[#c9d1d9] px-1 py-0.5 rounded font-mono">all-MiniLM-L6-v2</code>), and cached in persistent SQLite ChromaDB indexes.
+            </p>
+          </div>
+
+          <div>
+            <h3 class="text-sm font-bold text-blue-400 mb-2">2. Single-File Front-End Design</h3>
+            <p class="text-xs text-gray-400 leading-relaxed">
+              All UI templates, styles, dynamic script queries, and graphs run from a single zero-dependency HTML interface served straight by FastAPI. No Node.js environment required.
+            </p>
+          </div>
+
+          <div>
+            <h3 class="text-sm font-bold text-blue-400 mb-2">3. Zero-Temperature Agent Prompting</h3>
+            <p class="text-xs text-gray-400 leading-relaxed">
+              LLM verification tasks execute structured zero-temperature rules using the Llama-3.3-70b-versatile model hosted on Groq Cloud endpoints, forcing deterministic validation responses.
+            </p>
+          </div>
+
+          <div>
+            <h3 class="text-sm font-bold text-blue-400 mb-2">4. Core Technologies</h3>
+            <table class="w-full border-collapse text-xs text-left">
+              <thead>
+                <tr class="border-b border-white/5 text-gray-400">
+                  <th class="py-2">Layer</th>
+                  <th class="py-2">Technology</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-white/2">
+                <tr>
+                  <td class="py-2 text-gray-500">Backend API</td>
+                  <td class="py-2 font-semibold">FastAPI · Uvicorn</td>
+                </tr>
+                <tr>
+                  <td class="py-2 text-gray-500">Vector Embeddings</td>
+                  <td class="py-2 font-semibold">SentenceTransformers · ChromaDB</td>
+                </tr>
+                <tr>
+                  <td class="py-2 text-gray-500">LLM Inference</td>
+                  <td class="py-2 font-semibold">Groq (Llama-3.3-70b)</td>
+                </tr>
+                <tr>
+                  <td class="py-2 text-gray-500">User Interface</td>
+                  <td class="py-2 font-semibold">Vanilla HTML5 · Tailwind CSS · Chart.js</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ── Frontend Javascript logic ── -->
+  <script>
+    const API_BASE = window.location.origin;
+    let activeTabId = 'evaluate';
+    let chartInstance = null;
+
+    // Run on init
+    window.addEventListener('DOMContentLoaded', () => {
+      lucide.createIcons();
+      fetchKbStats();
+    });
+
+    // Tab switcher
+    function switchTab(tabId) {
+      document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+      document.getElementById(`tab-${tabId}`).classList.remove('hidden');
+      
+      document.querySelectorAll('#nav-list button').forEach(el => el.classList.remove('text-white', 'bg-blue-500/15', 'border-blue-500/20'));
+      const activeBtn = document.getElementById(`nav-${tabId}`);
+      activeBtn.classList.add('text-white', 'bg-blue-500/15', 'border-blue-500/20');
+      
+      activeTabId = tabId;
+      lucide.createIcons();
+    }
+
+    // SVG Progress circle builder
+    function renderProgressRing(containerId, value, color) {
+      const container = document.getElementById(containerId);
+      if (!container) return;
+      
+      const percentage = Math.min(Math.max(value || 0, 0), 1);
+      const radius = 32;
+      const circumference = 2 * Math.PI * radius;
+      const offset = circumference - (percentage * circumference);
+      const textVal = value !== null ? `${Math.round(percentage * 100)}%` : '—';
+
+      container.innerHTML = `
+        <svg width="80" height="80" class="mx-auto">
+          <circle stroke="rgba(255,255,255,0.05)" fill="transparent" stroke-width="6" r="${radius}" cx="40" cy="40"/>
+          <circle class="progress-ring-circle" stroke="${color}" fill="transparent" stroke-width="6" 
+            stroke-dasharray="${circumference}" stroke-dashoffset="${offset}" stroke-linecap="round" r="${radius}" cx="40" cy="40"/>
+        </svg>
+        <div class="progress-ring-text absolute top-[36px] left-0 right-0 font-bold text-sm" style="color: ${color}">${textVal}</div>
+      `;
+    }
+
+    function getScoreColor(val) {
+      if (val === null) return '#6b7280';
+      if (val >= 0.7) return '#10b981';
+      if (val >= 0.4) return '#f59e0b';
+      return '#ef4444';
+    }
+
+    function getVerdictBadge(verdict) {
+      const v = (verdict || '').toLowerCase();
+      if (v.includes('highly') || v === 'accurate' || v === 'grounded' || v === 'no hallucination' || v === 'pass') {
+        return `<span class="px-2 py-0.5 text-[10px] font-extrabold uppercase bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded">✓ ${verdict}</span>`;
+      }
+      if (v.includes('partially') || v === 'unknown') {
+        return `<span class="px-2 py-0.5 text-[10px] font-extrabold uppercase bg-amber-500/10 border border-amber-500/20 text-amber-400 rounded">~ ${verdict}</span>`;
+      }
+      return `<span class="px-2 py-0.5 text-[10px] font-extrabold uppercase bg-red-500/10 border border-red-500/20 text-red-400 rounded">✗ ${verdict}</span>`;
+    }
+
+    // API Helper: get collection stats
+    async function fetchKbStats() {
+      try {
+        const res = await fetch(`${API_BASE}/api/kb/stats`);
+        const data = await res.json();
+        document.getElementById('kb-chunk-display').innerHTML = `
+          ${data.total_chunks} <span class="text-xs font-normal text-gray-400">chunks</span>
+        `;
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    // API Helper: reset DB
+    async function resetKb() {
+      if (!window.confirm('Clear all indexed documents from ChromaDB?')) return;
+      document.getElementById('reset-btn').disabled = true;
+      try {
+        await fetch(`${API_BASE}/api/kb/reset`, { method: 'POST' });
+        await fetchKbStats();
+        alert('Reference database reset successfully.');
+      } catch (err) {
+        console.error(err);
+      } finally {
+        document.getElementById('reset-btn').disabled = false;
+      }
+    }
+
+    // API Helper: load benchmark TriviaQA/SQuAD
+    async function loadBenchmark() {
+      const select = document.getElementById('benchmark-select');
+      const val = select.value;
+      if (val === '— select —') return;
+
+      const btn = document.getElementById('benchmark-btn');
+      const spinner = document.getElementById('benchmark-spinner');
+      
+      btn.disabled = true;
+      spinner.classList.add('spin-anim');
+
+      try {
+        const res = await fetch(`${API_BASE}/api/kb/load-benchmark`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dataset: val })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          await fetchKbStats();
+          alert(`Successfully seeded database with ${data.chunks_added} chunks from ${val}`);
+        } else {
+          alert(`Error: ${data.detail}`);
+        }
+      } catch (err) {
+        console.error(err);
+      } finally {
+        btn.disabled = false;
+        spinner.classList.remove('spin-anim');
+      }
+    }
+
+    // API Helper: Upload document files
+    let selectedFiles = [];
+    function handleFileSelect(e) {
+      selectedFiles = Array.from(e.target.files || []);
+      const fileListDiv = document.getElementById('file-list');
+      fileListDiv.innerHTML = '';
+      
+      if (selectedFiles.length > 0) {
+        fileListDiv.classList.remove('hidden');
+        selectedFiles.forEach((file) => {
+          fileListDiv.innerHTML += `
+            <div class="flex justify-between items-center bg-white/2 border border-white/5 px-2.5 py-1 rounded text-[10px]">
+              <span class="truncate text-gray-300 max-w-[120px]">${file.name}</span>
+              <span class="text-gray-500 font-semibold">${(file.size/1024).toFixed(0)}KB</span>
+            </div>
+          `;
+        });
+        
+        fileListDiv.innerHTML += `
+          <button onclick="uploadFiles()" id="upload-submit-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded text-[10px] py-1.5 transition-all mt-2">
+            Index Uploaded Files
+          </button>
+        `;
+      } else {
+        fileListDiv.classList.add('hidden');
+      }
+    }
+
+    async function uploadFiles() {
+      const submitBtn = document.getElementById('upload-submit-btn');
+      submitBtn.disabled = true;
+      submitBtn.innerText = 'Indexing files...';
+
+      const formData = new FormData();
+      selectedFiles.forEach((f) => formData.append('files', f));
+
+      try {
+        const res = await fetch(`${API_BASE}/api/kb/upload`, {
+          method: 'POST',
+          body: formData
+        });
+        const data = await res.json();
+        if (res.ok) {
+          await fetchKbStats();
+          document.getElementById('file-list').classList.add('hidden');
+          selectedFiles = [];
+          alert(`Successfully chunked and indexed ${data.chunks_added} reference segments.`);
+        } else {
+          alert(`Upload failed: ${data.detail}`);
+        }
+      } catch (err) {
+        console.error(err);
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerText = 'Index Uploaded Files';
+      }
+    }
+
+    // Action: Run Tab 1 Evaluation
+    async function runEvaluation() {
+      const question = document.getElementById('eval-q').value;
+      const aiResponse = document.getElementById('eval-r').value;
+      const refAnswer = document.getElementById('eval-ref').value;
+      const topK = document.getElementById('eval-topk').value;
+
+      if (!question.trim() || !aiResponse.trim()) {
+        alert('Question and AI Response are required fields.');
+        return;
+      }
+
+      const submitBtn = document.getElementById('eval-submit-btn');
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = `<i data-lucide="refresh-cw" class="w-4 h-4 spin-anim"></i> Evaluating pipeline...`;
+      lucide.createIcons();
+
+      try {
+        const res = await fetch(`${API_BASE}/api/evaluate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            question,
+            ai_response: aiResponse,
+            reference_answer: refAnswer || null,
+            top_k: parseInt(topK)
+          })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          document.getElementById('eval-default-placeholder').classList.add('hidden');
+          document.getElementById('eval-results-container').classList.remove('hidden');
+
+          // Render rings
+          const sc = data.scores;
+          renderProgressRing('ring-qr', sc.question_response_relevance, getScoreColor(sc.question_response_relevance));
+          renderProgressRing('ring-ret', sc.retrieval_relevance, getScoreColor(sc.retrieval_relevance));
+          renderProgressRing('ring-ground', sc.response_grounding, getScoreColor(sc.response_grounding));
+          renderProgressRing('ring-sem', sc.semantic_similarity, getScoreColor(sc.semantic_similarity));
+
+          // F1 badge
+          document.getElementById('f1-badge').innerHTML = getVerdictBadge(sc.token_f1 !== null ? `${Math.round(sc.token_f1 * 100)}% Match` : 'N/A');
+
+          // Render retrieved chunks
+          const listContainer = document.getElementById('retrieved-chunks-container');
+          listContainer.innerHTML = '';
+          document.getElementById('retrieved-chunks-header').innerText = `Top Retrieved Reference Chunks (${data.retrieved_chunks.length})`;
+          
+          if (data.retrieved_chunks.length > 0) {
+            data.retrieved_chunks.forEach((chunk, i) => {
+              listContainer.innerHTML += `
+                <div class="bg-white/1 border-l-2 border-blue-500 border-y border-r border-white/5 p-4 rounded-r-lg text-sm">
+                  <div class="flex justify-between items-center text-[10px] text-gray-500 font-semibold mb-2">
+                    <span>Rank #${i+1} · Source: <strong>${chunk.source}</strong></span>
+                    <span style="color: ${getScoreColor(chunk.similarity_score)}">Score: ${chunk.similarity_score.toFixed(4)}</span>
+                  </div>
+                  <p class="text-gray-200">${chunk.chunk}</p>
+                </div>
+              `;
+            });
+          } else {
+            listContainer.innerHTML = `
+              <div class="bg-white/1 border border-white/5 rounded-lg p-4 text-center text-xs text-gray-400">
+                Vector DB is empty. Populate reference data in the sidebar to enable semantic search check.
+              </div>
+            `;
+          }
+        } else {
+          alert(`Error: ${data.detail}`);
+        }
+      } catch (err) {
+        console.error(err);
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = `<i data-lucide="play" class="w-4 h-4"></i> Evaluate Quality`;
+        lucide.createIcons();
+      }
+    }
+
+    // Action: Run Tab 2 LLM Judges
+    async function runJudges() {
+      const question = document.getElementById('judge-q').value;
+      const aiResponse = document.getElementById('judge-r').value;
+      const refAnswer = document.getElementById('judge-ref').value;
+      const topK = document.getElementById('judge-topk').value;
+
+      if (!question.trim() || !aiResponse.trim()) {
+        alert('Question and AI Response are required.');
+        return;
+      }
+
+      const submitBtn = document.getElementById('judge-submit-btn');
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = `<i data-lucide="refresh-cw" class="w-4 h-4 spin-anim"></i> Running LLM Agents...`;
+      lucide.createIcons();
+
+      try {
+        const res = await fetch(`${API_BASE}/api/judge`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            question,
+            ai_response: aiResponse,
+            reference_answer: refAnswer || null,
+            top_k: parseInt(topK)
+          })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          document.getElementById('judge-default-placeholder').classList.add('hidden');
+          document.getElementById('judge-results-container').classList.remove('hidden');
+
+          const j = data.judgments;
+
+          // Relevance Judge
+          document.getElementById('judge-score-relevance').innerText = `${j.relevance.score}/10`;
+          document.getElementById('judge-badge-relevance').innerHTML = getVerdictBadge(j.relevance.verdict);
+          document.getElementById('judge-reason-relevance').innerHTML = `<strong>Reasoning:</strong> ${j.relevance.reasoning}`;
+
+          // Accuracy Judge
+          const accContainer = document.getElementById('judge-acc-badge-container');
+          const accReason = document.getElementById('judge-reason-accuracy');
+          const accEvidence = document.getElementById('judge-evidence-container');
+
+          if (j.accuracy.score !== null) {
+            accContainer.innerHTML = `
+              <span class="text-lg font-extrabold text-white">${j.accuracy.score}/10</span>
+              ${getVerdictBadge(j.accuracy.verdict)}
+            `;
+            accReason.innerHTML = `<strong>Reasoning:</strong> ${j.accuracy.reasoning}`;
+            if (j.accuracy.evidence) {
+              accEvidence.classList.remove('hidden');
+              accEvidence.innerText = `“${j.accuracy.evidence}”`;
+            } else {
+              accEvidence.classList.add('hidden');
+            }
+          } else {
+            accContainer.innerHTML = `<span class="px-2 py-0.5 text-[10px] font-extrabold uppercase bg-amber-500/10 border border-amber-500/20 text-amber-400 rounded">No Reference</span>`;
+            accReason.innerText = j.accuracy.reasoning;
+            accEvidence.classList.add('hidden');
+          }
+
+          // Hallucination Detector
+          const halContainer = document.getElementById('judge-hal-badge-container');
+          const halReason = document.getElementById('judge-reason-hallucination');
+          const halFlagged = document.getElementById('judge-flagged-container');
+          const halList = document.getElementById('judge-flagged-list');
+
+          if (j.hallucination.score !== null) {
+            halContainer.innerHTML = `
+              <span class="text-lg font-extrabold text-white">${j.hallucination.score}/10</span>
+              ${getVerdictBadge(j.hallucination.hallucination_detected ? 'Hallucination Detected' : 'No Hallucination')}
+            `;
+            halReason.innerHTML = `<strong>Reasoning:</strong> ${j.hallucination.reasoning}`;
+            
+            if (j.hallucination.flagged_statements.length > 0) {
+              halFlagged.classList.remove('hidden');
+              halList.innerHTML = '';
+              j.hallucination.flagged_statements.forEach((stmt) => {
+                halList.innerHTML += `
+                  <li class="flex gap-2 items-start bg-red-500/5 border border-red-500/10 p-2 rounded text-xs text-red-300 italic">
+                    <i data-lucide="alert-triangle" class="w-3.5 h-3.5 text-red-500 shrink-0 mt-0.5"></i>
+                    <span>${stmt}</span>
+                  </li>
+                `;
+              });
+            } else {
+              halFlagged.classList.add('hidden');
+            }
+          } else {
+            halContainer.innerHTML = `<span class="px-2 py-0.5 text-[10px] font-extrabold uppercase bg-amber-500/10 border border-amber-500/20 text-amber-400 rounded">No KB Loaded</span>`;
+            halReason.innerText = j.hallucination.reasoning;
+            halFlagged.classList.add('hidden');
+          }
+        } else {
+          alert(`Error: ${data.detail}`);
+        }
+      } catch (err) {
+        console.error(err);
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = `<i data-lucide="activity" class="w-4 h-4"></i> Orchestrate LLM Judges`;
+        lucide.createIcons();
+      }
+    }
+
+    // Action: Run Tab 3 Semantic Search
+    async function runSearch() {
+      const q = document.getElementById('retrieval-query').value;
+      const limit = document.getElementById('retrieval-limit').value;
+      if (!q.trim()) return;
+
+      document.getElementById('retrieval-placeholder').classList.add('hidden');
+      const resultsCard = document.getElementById('retrieval-results-card');
+      const container = document.getElementById('retrieval-results-container');
+      
+      resultsCard.classList.remove('hidden');
+      container.innerHTML = `<div class="text-center py-6 text-xs text-gray-400">Querying vectors...</div>`;
+
+      try {
+        const res = await fetch(`${API_BASE}/api/evaluate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            question: q,
+            ai_response: 'placeholder',
+            top_k: parseInt(limit)
+          })
+        });
+        const data = await res.json();
+        if (res.ok && data.retrieved_chunks) {
+          container.innerHTML = '';
+          document.getElementById('retrieval-results-title').innerText = `Nearest Neighbor Matches (${data.retrieved_chunks.length})`;
+          
+          if (data.retrieved_chunks.length > 0) {
+            data.retrieved_chunks.forEach((match, i) => {
+              container.innerHTML += `
+                <div class="bg-white/1 border border-white/5 rounded-xl p-5">
+                  <div class="flex justify-between items-center text-xs text-gray-400 mb-3">
+                    <div class="flex items-center gap-2">
+                      <span class="bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded font-extrabold">RANK #${i+1}</span>
+                      <span>Source: <strong>${match.source}</strong> (index: ${match.chunk_index})</span>
+                    </div>
+                    <span style="color: ${getScoreColor(match.similarity_score)}" class="font-bold">Cosine Similarity: ${match.similarity_score.toFixed(4)}</span>
+                  </div>
+                  <p class="text-gray-200 text-sm leading-relaxed">${match.chunk}</p>
+                </div>
+              `;
+            });
+          } else {
+            container.innerHTML = `<div class="text-center py-6 text-xs text-gray-400">Database is empty. Populating vectors will show matches here.</div>`;
+          }
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    // Action: Run Tab 4 Consistency Validation
+    async function runValidationSuite() {
+      document.getElementById('val-start-card').classList.add('hidden');
+      const progressCard = document.getElementById('val-progress-card');
+      const resultsCard = document.getElementById('val-results-card');
+      
+      progressCard.classList.remove('hidden');
+      resultsCard.classList.add('hidden');
+
+      const progressBar = document.getElementById('val-progress-bar');
+      const progressCount = document.getElementById('val-progress-count');
+      const progressSub = document.getElementById('val-progress-sub');
+
+      // Emulate validation step progress
+      let currentIdx = 0;
+      progressCount.innerText = `0 / 8 Evaluated`;
+      progressBar.style.width = '0%';
+      progressSub.innerText = 'Evaluating pair #1: France capital...';
+
+      const interval = setInterval(() => {
+        if (currentIdx < 7) {
+          currentIdx++;
+          progressCount.innerText = `${currentIdx} / 8 Evaluated`;
+          progressBar.style.width = `${(currentIdx / 8) * 100}%`;
+          
+          const questions = [
+            'France capital (incorrect answer)...',
+            'RAG standing definition...',
+            'RAG architecture (incorrect answer)...',
+            'Hamlet playwright author...',
+            'Hamlet novel playwright (incorrect answer)...',
+            'Photosynthesis plant process...',
+            'Photosynthesis animal digestion (incorrect answer)...'
+          ];
+          progressSub.innerText = `Evaluating pair #${currentIdx+1}: ${questions[currentIdx-1]}`;
+        }
+      }, 1800);
+
+      try {
+        const res = await fetch(`${API_BASE}/api/validate`);
+        const data = await res.json();
+        clearInterval(interval);
+        
+        if (res.ok) {
+          progressCard.classList.add('hidden');
+          resultsCard.classList.remove('hidden');
+
+          // Set summary metrics
+          const s = data.summary;
+          const cc = data.consistency_check;
+
+          document.getElementById('val-mean-relevance').innerText = `${s.relevance.mean}/10`;
+          document.getElementById('val-stdev-relevance').innerText = `Stdev (σ) = ${s.relevance.stdev}`;
+          
+          document.getElementById('val-mean-accuracy').innerText = `${s.accuracy.mean}/10`;
+          document.getElementById('val-stdev-accuracy').innerText = `Stdev (σ) = ${s.accuracy.stdev}`;
+
+          document.getElementById('val-mean-grounding').innerText = `${s.hallucination_grounding.mean}/10`;
+          document.getElementById('val-stdev-grounding').innerText = `Stdev (σ) = ${s.hallucination_grounding.stdev}`;
+
+          // Consistency status card styling
+          const cCard = document.getElementById('val-consistency-card');
+          const vStatus = document.getElementById('val-verdict-status');
+          const mDetail = document.getElementById('val-margin-detail');
+
+          if (cc.judges_consistent) {
+            cCard.className = 'border border-emerald-500/20 bg-emerald-500/2 rounded-2xl p-5 text-center flex flex-col items-center justify-center';
+            vStatus.className = 'text-3xl font-black mt-2 text-emerald-400';
+            vStatus.innerText = 'PASS';
+          } else {
+            cCard.className = 'border border-red-500/20 bg-red-500/2 rounded-2xl p-5 text-center flex flex-col items-center justify-center';
+            vStatus.className = 'text-3xl font-black mt-2 text-red-400';
+            vStatus.innerText = 'FAIL';
+          }
+          mDetail.innerText = `Correct: ${cc.correct_answer_avg_accuracy} vs Wrong: ${cc.wrong_answer_avg_accuracy}`;
+
+          // Stats table
+          const statsTable = document.getElementById('val-stats-table');
+          statsTable.innerHTML = `
+            <div class="flex justify-between border-b border-white/5 pb-2">
+              <span class="text-gray-400">Total Evaluated Pairs:</span>
+              <strong class="text-white">${data.total_pairs} QA Pairs</strong>
+            </div>
+            <div class="flex justify-between border-b border-white/5 pb-2">
+              <span class="text-gray-400">Correct Answers Avg Accuracy:</span>
+              <strong class="text-emerald-400">${cc.correct_answer_avg_accuracy}/10</strong>
+            </div>
+            <div class="flex justify-between border-b border-white/5 pb-2">
+              <span class="text-gray-400">Wrong Answers Avg Accuracy:</span>
+              <strong class="text-red-400">${cc.wrong_answer_avg_accuracy}/10</strong>
+            </div>
+            <div class="flex justify-between border-b border-white/5 pb-2">
+              <span class="text-gray-400">Average Score Margin:</span>
+              <strong class="text-blue-400">${(cc.correct_answer_avg_accuracy - cc.wrong_answer_avg_accuracy).toFixed(2)}/10</strong>
+            </div>
+            <p class="text-[10px] text-gray-500 leading-normal mt-2">
+              * Verification passes if correct answers average higher than wrong answers, confirming logical judge consistency.
+            </p>
+          `;
+
+          // Accuracy Chart using Chart.js
+          const ctx = document.getElementById('accuracy-comparison-chart').getContext('2d');
+          if (chartInstance) {
+            chartInstance.destroy();
+          }
+          chartInstance = new Chart(ctx, {
+            type: 'bar',
+            data: {
+              labels: ['Average Accuracy'],
+              datasets: [
+                {
+                  label: 'Correct Answers',
+                  data: [cc.correct_answer_avg_accuracy],
+                  backgroundColor: 'rgba(16, 185, 129, 0.75)',
+                  borderColor: 'rgba(16, 185, 129, 1)',
+                  borderWidth: 1,
+                  borderRadius: 4
+                },
+                {
+                  label: 'Wrong Answers',
+                  data: [cc.wrong_answer_avg_accuracy],
+                  backgroundColor: 'rgba(239, 68, 68, 0.75)',
+                  borderColor: 'rgba(239, 68, 68, 1)',
+                  borderWidth: 1,
+                  borderRadius: 4
+                }
+              ]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: {
+                legend: { labels: { color: '#f3f4f6', font: { family: 'Outfit' } } }
+              },
+              scales: {
+                x: { ticks: { color: '#9ca3af', font: { family: 'Outfit' } }, grid: { display: false } },
+                y: { min: 0, max: 10, ticks: { color: '#9ca3af', font: { family: 'Outfit' } }, grid: { color: 'rgba(255,255,255,0.05)' } }
+              }
+            }
+          });
+
+          // Render Accordions
+          const pairsContainer = document.getElementById('val-pairs-container');
+          pairsContainer.innerHTML = '';
+          data.per_pair.forEach((pair, idx) => {
+            const hasEvidence = pair.accuracy_evidence ? true : false;
+            const hasFlagged = pair.flagged_statements.length > 0;
+            
+            pairsContainer.innerHTML += `
+              <div class="border border-white/5 rounded-xl overflow-hidden bg-white/1">
+                <!-- Header -->
+                <div onclick="toggleAccordion(${idx})" class="px-5 py-4 bg-white/2 hover:bg-white/4 transition-all cursor-pointer flex justify-between items-center font-semibold text-sm">
+                  <span>Pair #${idx+1}: ${pair.question}</span>
+                  <i data-lucide="chevron-right" class="w-4 h-4 text-gray-500 transition-transform duration-200" id="chevron-${idx}"></i>
+                </div>
+                
+                <!-- Body -->
+                <div id="accordion-body-${idx}" class="hidden p-5 border-t border-white/5 bg-[#0a1120]/20 space-y-4 text-sm">
+                  <div>
+                    <strong class="text-xs text-gray-400 block mb-1">Question:</strong>
+                    <div class="bg-white/2 p-3 rounded-lg text-gray-200">${pair.question}</div>
+                  </div>
+
+                  <div>
+                    <strong class="text-xs text-gray-400 block mb-1">AI Response:</strong>
+                    <div class="bg-white/2 p-3 rounded-lg text-gray-200 border-l-2 ${idx % 2 === 0 ? 'border-emerald-500' : 'border-red-500'}">${pair.ai_response}</div>
+                  </div>
+
+                  <div>
+                    <strong class="text-xs text-gray-400 block mb-1">Ground-Truth Reference:</strong>
+                    <div class="bg-white/2 p-3 rounded-lg text-gray-200">${pair.reference_answer}</div>
+                  </div>
+
+                  <div class="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+                    <!-- Relevance -->
+                    <div class="bg-white/1 border border-white/5 p-4 rounded-xl">
+                      <div class="flex justify-between items-center mb-2">
+                        <strong class="text-blue-400 font-bold">🎯 Relevance</strong>
+                        <span class="font-extrabold text-white">${pair.relevance_score}/10</span>
+                      </div>
+                      <p class="text-xs text-gray-400 leading-relaxed">${pair.relevance_reasoning}</p>
+                    </div>
+
+                    <!-- Accuracy -->
+                    <div class="bg-white/1 border border-white/5 p-4 rounded-xl">
+                      <div class="flex justify-between items-center mb-2">
+                        <strong class="text-emerald-400 font-bold">✅ Accuracy</strong>
+                        <span class="font-extrabold text-white">${pair.accuracy_score}/10</span>
+                      </div>
+                      <p class="text-xs text-gray-400 leading-relaxed">${pair.accuracy_reasoning}</p>
+                      ${hasEvidence ? `<p class="border-l-2 border-emerald-500 bg-white/1 p-1 rounded-r italic text-[10px] text-gray-500 mt-2">“${pair.accuracy_evidence}”</p>` : ''}
+                    </div>
+
+                    <!-- Grounding -->
+                    <div class="bg-white/1 border border-white/5 p-4 rounded-xl">
+                      <div class="flex justify-between items-center mb-2">
+                        <strong class="text-red-400 font-bold">🔍 Grounding</strong>
+                        <span class="font-extrabold text-white">${pair.hallucination_score}/10</span>
+                      </div>
+                      <p class="text-xs text-gray-400 leading-relaxed">${pair.hallucination_reasoning}</p>
+                      ${hasFlagged ? `
+                        <div class="mt-2 space-y-1">
+                          ${pair.flagged_statements.map(s => `<div class="text-[10px] text-red-400 italic">🚩 ${s}</div>`).join('')}
+                        </div>
+                      ` : ''}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            `;
+          });
+          lucide.createIcons();
+        }
+      } catch (err) {
+        clearInterval(interval);
+        console.error(err);
+      } finally {
+        progressCard.classList.add('hidden');
+      }
+    }
+
+    function toggleAccordion(idx) {
+      const body = document.getElementById(`accordion-body-${idx}`);
+      const chevron = document.getElementById(`chevron-${idx}`);
+      if (body.classList.contains('hidden')) {
+        body.classList.remove('hidden');
+        chevron.style.transform = 'rotate(90deg)';
+      } else {
+        body.classList.add('hidden');
+        chevron.style.transform = 'rotate(0deg)';
+      }
+    }
+  </script>
+</body>
+</html>
