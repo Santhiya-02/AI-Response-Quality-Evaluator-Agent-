@@ -77,14 +77,21 @@ def progress(i, total, q):
 
 val = run_validation(use_kb=True, progress_callback=progress)
 
-print(f"\n[RESULTS] {val['total_pairs']} pairs evaluated")
-s  = val["summary"]
-cc = val["consistency_check"]
-print(f"  Avg Relevance  : {s['relevance']['mean']}/10  (stdev={s['relevance']['stdev']})")
-print(f"  Avg Accuracy   : {s['accuracy']['mean']}/10  (stdev={s['accuracy']['stdev']})")
-print(f"  Avg Grounding  : {s['hallucination_grounding']['mean']}/10  (stdev={s['hallucination_grounding']['stdev']})")
-print(f"  Correct ans avg accuracy : {cc['correct_answer_avg_accuracy']}")
-print(f"  Wrong ans avg accuracy   : {cc['wrong_answer_avg_accuracy']}")
-print(f"  Consistency check        : {'PASS' if cc['judges_consistent'] else 'FAIL'}")
+total = val.get("total_cases") or val.get("total_pairs", 0)
+print(f"\n[RESULTS] {total} cases evaluated")
+if "summary" in val:
+    s  = val["summary"]
+    cc = val["consistency_check"]
+    print(f"  Avg Relevance  : {s['relevance']['mean']}/10  (stdev={s['relevance']['stdev']})")
+    print(f"  Avg Accuracy   : {s['accuracy']['mean']}/10  (stdev={s['accuracy']['stdev']})")
+    print(f"  Avg Grounding  : {s['hallucination_grounding']['mean']}/10  (stdev={s['hallucination_grounding']['stdev']})")
+    print(f"  Correct ans avg accuracy : {cc['correct_answer_avg_accuracy']}")
+    print(f"  Wrong ans avg accuracy   : {cc['wrong_answer_avg_accuracy']}")
+    print(f"  Consistency check        : {'PASS' if cc['judges_consistent'] else 'FAIL'}")
+else:
+    disc = val.get("discrimination", {})
+    print(f"  Correct ans avg accuracy : {disc.get('correct_answer_average')}")
+    print(f"  Wrong ans avg accuracy   : {disc.get('incorrect_answer_average')}")
+    print(f"  Consistency check        : {'PASS' if disc.get('passed') else 'FAIL'}")
 
 print("\n[PASS] All Milestone 2 components verified successfully!")

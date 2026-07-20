@@ -1,103 +1,345 @@
 """
-Scoring Module — baseline lexical and semantic similarity scores.
+Scoring Module
+
+Provides:
+- Semantic similarity
+- Token-overlap F1
+- Retrieval diagnostics
+- LLM judge execution
+- Weighted final score and verdict
 """
 
 import re
-import os
-from sentence_transformers import SentenceTransformer, util
-from dotenv import load_dotenv
+import string
+from collections import Counter
+from typing import Optional
 
-load_dotenv()
-EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
-GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
-GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+from sentence_transformers import util
 
-_embedder = None
-_groq_client = None
+from src.knowledge_base import _get_embedder
 
 
-def _get_embedder():
-    global _embedder
-    if _embedder is None:
-        _embedder = SentenceTransformer(EMBEDDING_MODEL)
-    return _embedder
+JUDGE_WEIGHTS = {
+    "relevance": 0.25,
+    "accuracy": 0.35,
+    "hallucination": 0.25,
+    "completeness": 0.15
+}
 
 
-def _get_groq_client():
-    global _groq_client
-    if _groq_client is None and GROQ_API_KEY:
-        from groq import Groq
-        _groq_client = Groq(api_key=GROQ_API_KEY)
-    return _groq_client
+def semantic_similarity(
+    text_a: str,
+    text_b: str
+) -> float:
+    """
+    Calculate cosine similarity between two texts.
 
+    The returned value normally ranges from -1 to 1.
+    Higher values indicate greater semantic similarity.
+    """
+    text_a = (text_a or "").strip()
+    text_b = (text_b or "").strip()
 
-def semantic_similarity(text_a: str, text_b: str) -> float:
-    """Cosine similarity between two texts using sentence embeddings."""
+    if not text_a or not text_b:
+        return 0.0
+
     embedder = _get_embedder()
-    embs = embedder.encode([text_a, text_b], convert_to_tensor=True)
-    score = util.cos_sim(embs[0], embs[1]).item()
+
+    embeddings = embedder.encode(
+        [text_a, text_b],
+        convert_to_tensor=True,
+        show_progress_bar=False,
+        normalize_embeddings=True
+    )
+
+    score = util.cos_sim(
+        embeddings[0],
+        embeddings[1]
+    ).item()
+
+    score = max(-1.0, min(1.0, float(score)))
+
     return round(score, 4)
 
 
-def token_overlap_f1(prediction: str, reference: str) -> float:
-    """Token-level F1 score (similar to SQuAD metric)."""
-    def tokenize(s):
-        return set(re.findall(r'\b\w+\b', s.lower()))
+def _normalize_answer(text: str) -> list[str]:
+    """Apply SQuAD-style answer normalization."""
+    text = (text or "").lower()
 
-    pred_tokens = tokenize(prediction)
-    ref_tokens = tokenize(reference)
-    if not pred_tokens or not ref_tokens:
-        return 0.0
-    common = pred_tokens & ref_tokens
-    if not common:
-        return 0.0
-    precision = len(common) / len(pred_tokens)
-    recall = len(common) / len(ref_tokens)
-    return round(2 * precision * recall / (precision + recall), 4)
-
-
-def groq_judge(prompt: str) -> str:
-    """Call Groq LLM with a prompt and return the response text."""
-    client = _get_groq_client()
-    if not client:
-        return "Groq API key not configured."
-    response = client.chat.completions.create(
-        model=GROQ_MODEL,
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.0,
-        max_tokens=512
+    text = "".join(
+        character
+        for character in text
+        if character not in string.punctuation
     )
-    return response.choices[0].message.content.strip()
+
+    text = re.sub(
+        r"\b(a|an|the)\b",
+        " ",
+        text
+    )
+
+    text = " ".join(text.split())
+
+    return text.split()
 
 
-def score_response(question: str, ai_response: str, reference_answer: str = None,
-                   retrieved_chunks: list[dict] = None,
-                   run_judges: bool = False) -> dict:
+def token_overlap_f1(
+    prediction: str,
+    reference: str
+) -> float:
+    """Calculate SQuAD-style token-level F1."""
+    prediction_tokens = _normalize_answer(prediction)
+    reference_tokens = _normalize_answer(reference)
+
+    if not prediction_tokens or not reference_tokens:
+        return 0.0
+
+    common_tokens = (
+        Counter(prediction_tokens)
+        & Counter(reference_tokens)
+    )
+
+    common_count = sum(common_tokens.values())
+
+    if common_count == 0:
+        return 0.0
+
+    precision = (
+        common_count / len(prediction_tokens)
+    )
+
+    recall = (
+        common_count / len(reference_tokens)
+    )
+
+    f1 = (
+        2 * precision * recall
+        / (precision + recall)
+    )
+
+    return round(f1, 4)
+
+
+def _valid_retrieved_chunks(
+    retrieved_chunks: Optional[list[dict]]
+) -> list[dict]:
+    """Return retrieved chunks containing usable text."""
+    if not retrieved_chunks:
+        return []
+
+    return [
+        chunk
+        for chunk in retrieved_chunks
+        if isinstance(chunk, dict)
+        and str(chunk.get("chunk", "")).strip()
+    ]
+
+
+def _retrieval_scores(
+    retrieved_chunks: list[dict]
+) -> list[float]:
+    """Extract valid retrieval-similarity scores."""
+    scores: list[float] = []
+
+    for chunk in retrieved_chunks:
+        value = chunk.get("similarity_score")
+
+        if value is None or isinstance(value, bool):
+            continue
+
+        try:
+            scores.append(float(value))
+        except (TypeError, ValueError):
+            continue
+
+    return scores
+
+
+def aggregate_judge_scores(
+    judge_results: dict
+) -> dict:
     """
-    Compute baseline scores (M1) and optionally run LLM judge agents (M2).
-    Set run_judges=True to invoke Relevance, Accuracy, and Hallucination judges.
-    """
-    scores = {}
+    Calculate a weighted overall judge score.
 
-    if retrieved_chunks:
-        chunk_sims = [c["similarity_score"] for c in retrieved_chunks]
-        scores["retrieval_relevance"] = round(sum(chunk_sims) / len(chunk_sims), 4)
-        scores["response_grounding"] = semantic_similarity(ai_response, retrieved_chunks[0]["chunk"])
+    Missing judge scores are excluded, and the remaining
+    weights are normalized. Coverage shows how much of the
+    intended evaluation was successfully completed.
+    """
+    weighted_total = 0.0
+    available_weight = 0.0
+    component_scores: dict[str, Optional[float]] = {}
+
+    for judge_name, weight in JUDGE_WEIGHTS.items():
+        judge_result = judge_results.get(
+            judge_name,
+            {}
+        )
+
+        score = judge_result.get("score")
+
+        if score is None or isinstance(score, bool):
+            component_scores[judge_name] = None
+            continue
+
+        try:
+            score = float(score)
+        except (TypeError, ValueError):
+            component_scores[judge_name] = None
+            continue
+
+        if not 0 <= score <= 10:
+            component_scores[judge_name] = None
+            continue
+
+        component_scores[judge_name] = score
+        weighted_total += score * weight
+        available_weight += weight
+
+    coverage = round(available_weight, 2)
+
+    if available_weight == 0:
+        return {
+            "overall_score": None,
+            "verdict": "Cannot Evaluate",
+            "evaluation_coverage": 0.0,
+            "limited_evidence": True,
+            "component_scores": component_scores
+        }
+
+    normalized_score = (
+        weighted_total / available_weight
+    )
+
+    percentage_score = round(
+        normalized_score * 10,
+        2
+    )
+
+    if percentage_score >= 85:
+        verdict = "Excellent"
+    elif percentage_score >= 70:
+        verdict = "Good"
+    elif percentage_score >= 50:
+        verdict = "Needs Improvement"
+    else:
+        verdict = "Poor"
+
+    limited_evidence = coverage < 0.75
+
+    if limited_evidence:
+        verdict = f"{verdict} — Limited Evidence"
+
+    return {
+        "overall_score": percentage_score,
+        "verdict": verdict,
+        "evaluation_coverage": coverage,
+        "limited_evidence": limited_evidence,
+        "component_scores": component_scores
+    }
+
+
+def score_response(
+    question: str,
+    ai_response: str,
+    reference_answer: Optional[str] = None,
+    retrieved_chunks: Optional[list[dict]] = None,
+    run_judges: bool = False
+) -> dict:
+    """
+    Calculate baseline metrics and optionally run LLM judges.
+    """
+    question = (question or "").strip()
+    ai_response = (ai_response or "").strip()
+
+    if not question:
+        raise ValueError("Question cannot be empty.")
+
+    if not ai_response:
+        raise ValueError("AI response cannot be empty.")
+
+    reference_answer = (
+        reference_answer.strip()
+        if reference_answer
+        and reference_answer.strip()
+        else None
+    )
+
+    chunks = _valid_retrieved_chunks(
+        retrieved_chunks
+    )
+
+    scores: dict = {}
+
+    retrieval_scores = _retrieval_scores(chunks)
+
+    if retrieval_scores:
+        scores["retrieval_relevance"] = {
+            "average": round(
+                sum(retrieval_scores)
+                / len(retrieval_scores),
+                4
+            ),
+            "maximum": round(
+                max(retrieval_scores),
+                4
+            )
+        }
     else:
         scores["retrieval_relevance"] = None
+
+    if chunks:
+        combined_context = "\n".join(
+            str(chunk.get("chunk", ""))[:1000]
+            for chunk in chunks[:5]
+        )
+
+        scores["response_grounding"] = (
+            semantic_similarity(
+                ai_response,
+                combined_context
+            )
+        )
+    else:
         scores["response_grounding"] = None
 
     if reference_answer:
-        scores["semantic_similarity"] = semantic_similarity(ai_response, reference_answer)
-        scores["token_f1"] = token_overlap_f1(ai_response, reference_answer)
+        scores["semantic_similarity"] = (
+            semantic_similarity(
+                ai_response,
+                reference_answer
+            )
+        )
+
+        scores["token_f1"] = token_overlap_f1(
+            ai_response,
+            reference_answer
+        )
     else:
         scores["semantic_similarity"] = None
         scores["token_f1"] = None
 
-    scores["question_response_relevance"] = semantic_similarity(question, ai_response)
+    scores["question_response_relevance"] = (
+        semantic_similarity(
+            question,
+            ai_response
+        )
+    )
 
     if run_judges:
         from src.judges import run_all_judges
-        scores["judges"] = run_all_judges(question, ai_response, reference_answer, retrieved_chunks)
+
+        judge_results = run_all_judges(
+            question=question,
+            ai_response=ai_response,
+            reference_answer=reference_answer,
+            retrieved_chunks=chunks
+        )
+
+        scores["judges"] = judge_results
+        scores["final_evaluation"] = (
+            aggregate_judge_scores(
+                judge_results
+            )
+        )
 
     return scores

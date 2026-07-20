@@ -685,12 +685,12 @@
     function getVerdictBadge(verdict) {
       const v = (verdict || '').toLowerCase();
       if (v.includes('highly') || v === 'accurate' || v === 'grounded' || v === 'no hallucination' || v === 'pass') {
-        return `<span class="px-2 py-0.5 text-[10px] font-extrabold uppercase bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded">✓ ${verdict}</span>`;
+        return `<span class="px-2 py-0.5 text-[10px] font-extrabold uppercase bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded">${verdict}</span>`;
       }
       if (v.includes('partially') || v === 'unknown') {
-        return `<span class="px-2 py-0.5 text-[10px] font-extrabold uppercase bg-amber-500/10 border border-amber-500/20 text-amber-400 rounded">~ ${verdict}</span>`;
+        return `<span class="px-2 py-0.5 text-[10px] font-extrabold uppercase bg-amber-500/10 border border-amber-500/20 text-amber-400 rounded">${verdict}</span>`;
       }
-      return `<span class="px-2 py-0.5 text-[10px] font-extrabold uppercase bg-red-500/10 border border-red-500/20 text-red-400 rounded">✗ ${verdict}</span>`;
+      return `<span class="px-2 py-0.5 text-[10px] font-extrabold uppercase bg-red-500/10 border border-red-500/20 text-red-400 rounded">${verdict}</span>`;
     }
 
     // API Helper: get collection stats
@@ -1050,6 +1050,177 @@
       }
     }
 
+    function normalizeValidationData(rawData) {
+      // Original backend format requires no conversion.
+      if (
+        rawData.summary &&
+        rawData.consistency_check
+      ) {
+        return rawData;
+      }
+
+      const cases = rawData.per_case || [];
+
+      function validNumbers(values) {
+        return values
+          .map(Number)
+          .filter(Number.isFinite);
+      }
+
+      function mean(values) {
+        const numbers = validNumbers(values);
+
+        if (numbers.length === 0) {
+          return null;
+        }
+
+        return Number(
+          (
+            numbers.reduce(
+              (total, value) => total + value,
+              0
+            ) / numbers.length
+          ).toFixed(2)
+        );
+      }
+
+      function standardDeviation(values) {
+        const numbers = validNumbers(values);
+
+        if (numbers.length <= 1) {
+          return 0;
+        }
+
+        const average = mean(numbers);
+
+        const variance =
+          numbers.reduce(
+            (total, value) =>
+              total + Math.pow(value - average, 2),
+            0
+          ) /
+          (numbers.length - 1);
+
+        return Number(
+          Math.sqrt(variance).toFixed(2)
+        );
+      }
+
+      function firstJudgeResult(
+        caseData,
+        judgeName
+      ) {
+        return (
+          caseData.runs?.[0]?.[judgeName] || {}
+        );
+      }
+
+      const relevanceScores = cases.map(
+        item => item.relevance_mean
+      );
+
+      const accuracyScores = cases.map(
+        item => item.accuracy_mean
+      );
+
+      const groundingScores = cases.map(
+        item => item.hallucination_grounding_mean
+      );
+
+      const perPair = cases.map(caseData => {
+        const relevance = firstJudgeResult(
+          caseData,
+          "relevance"
+        );
+
+        const accuracy = firstJudgeResult(
+          caseData,
+          "accuracy"
+        );
+
+        const hallucination = firstJudgeResult(
+          caseData,
+          "hallucination"
+        );
+
+        return {
+          question: caseData.question || "",
+          ai_response: caseData.ai_response || "",
+          reference_answer:
+            caseData.reference_answer || "",
+
+          relevance_score:
+            caseData.relevance_mean,
+          relevance_verdict:
+            relevance.verdict || "Unknown",
+          relevance_reasoning:
+            relevance.reasoning || "",
+
+          accuracy_score:
+            caseData.accuracy_mean,
+          accuracy_verdict:
+            accuracy.verdict || "Unknown",
+          accuracy_reasoning:
+            accuracy.reasoning || "",
+          accuracy_evidence:
+            accuracy.evidence || "",
+
+          hallucination_detected:
+            caseData.hallucination_detected,
+          hallucination_score:
+            caseData.hallucination_grounding_mean,
+          hallucination_reasoning:
+            hallucination.reasoning || "",
+          flagged_statements:
+            hallucination.flagged_statements || []
+        };
+      });
+
+      const discrimination =
+        rawData.discrimination || {};
+
+      return {
+        total_pairs:
+          rawData.total_cases || cases.length,
+
+        summary: {
+          relevance: {
+            mean: mean(relevanceScores),
+            stdev: standardDeviation(
+              relevanceScores
+            )
+          },
+
+          accuracy: {
+            mean: mean(accuracyScores),
+            stdev: standardDeviation(
+              accuracyScores
+            )
+          },
+
+          hallucination_grounding: {
+            mean: mean(groundingScores),
+            stdev: standardDeviation(
+              groundingScores
+            )
+          }
+        },
+
+        consistency_check: {
+          correct_answer_avg_accuracy:
+            discrimination.correct_answer_average,
+
+          wrong_answer_avg_accuracy:
+            discrimination.incorrect_answer_average,
+
+          judges_consistent:
+            Boolean(discrimination.passed)
+        },
+
+        per_pair: perPair
+      };
+    }
+
     // Action: Run Tab 4 Consistency Validation
     async function runValidationSuite() {
       document.getElementById('val-start-card').classList.add('hidden');
@@ -1090,7 +1261,8 @@
 
       try {
         const res = await fetch(`${API_BASE}/api/validate`);
-        const data = await res.json();
+        const rawData = await res.json();
+        const data = normalizeValidationData(rawData);
         clearInterval(interval);
         
         if (res.ok) {
@@ -1227,7 +1399,7 @@
                     <!-- Relevance -->
                     <div class="bg-white/1 border border-white/5 p-4 rounded-xl">
                       <div class="flex justify-between items-center mb-2">
-                        <strong class="text-blue-400 font-bold">🎯 Relevance</strong>
+                        <strong class="text-blue-400 font-bold">Relevance</strong>
                         <span class="font-extrabold text-white">${pair.relevance_score}/10</span>
                       </div>
                       <p class="text-xs text-gray-400 leading-relaxed">${pair.relevance_reasoning}</p>
@@ -1236,7 +1408,7 @@
                     <!-- Accuracy -->
                     <div class="bg-white/1 border border-white/5 p-4 rounded-xl">
                       <div class="flex justify-between items-center mb-2">
-                        <strong class="text-emerald-400 font-bold">✅ Accuracy</strong>
+                        <strong class="text-emerald-400 font-bold">Accuracy</strong>
                         <span class="font-extrabold text-white">${pair.accuracy_score}/10</span>
                       </div>
                       <p class="text-xs text-gray-400 leading-relaxed">${pair.accuracy_reasoning}</p>
@@ -1246,13 +1418,13 @@
                     <!-- Grounding -->
                     <div class="bg-white/1 border border-white/5 p-4 rounded-xl">
                       <div class="flex justify-between items-center mb-2">
-                        <strong class="text-red-400 font-bold">🔍 Grounding</strong>
+                        <strong class="text-red-400 font-bold">Grounding</strong>
                         <span class="font-extrabold text-white">${pair.hallucination_score}/10</span>
                       </div>
                       <p class="text-xs text-gray-400 leading-relaxed">${pair.hallucination_reasoning}</p>
                       ${hasFlagged ? `
                         <div class="mt-2 space-y-1">
-                          ${pair.flagged_statements.map(s => `<div class="text-[10px] text-red-400 italic">🚩 ${s}</div>`).join('')}
+                          ${pair.flagged_statements.map(s => `<div class="text-[10px] text-red-400 italic">[Flagged] ${s}</div>`).join('')}
                         </div>
                       ` : ''}
                     </div>
@@ -1266,6 +1438,14 @@
       } catch (err) {
         clearInterval(interval);
         console.error(err);
+
+        alert(
+          `Validation display failed: ${err.message}`
+        );
+
+        document
+          .getElementById("val-start-card")
+          .classList.remove("hidden");
       } finally {
         progressCard.classList.add('hidden');
       }

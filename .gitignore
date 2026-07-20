@@ -1,7 +1,10 @@
 .env
+venv/
 chroma_db/
 __pycache__/
 scratch/
+.pytest_cache/
+.vscode/
 *.pyc
 *.pyo
-.pytest_cache/
+*.log
